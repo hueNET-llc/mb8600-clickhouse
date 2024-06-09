@@ -272,7 +272,7 @@ class Exporter:
             url=self.clickhouse_url,
             user=self.clickhouse_username,
             password=self.clickhouse_password,
-            database=self.clickhouse_password,
+            database=self.clickhouse_database,
             json=json
         )
         # Cookies used for auth
