@@ -307,7 +307,7 @@ class Exporter:
                 # Insert the data into ClickHouse
                 await self.clickhouse.execute(
                     data[0],
-                    data[1:]
+                    *data[1]
                 )
             except Exception as e:
                 log.error(f'Failed to insert data into ClickHouse: {e}')
@@ -366,6 +366,9 @@ class Exporter:
                 scraping_latency = perf_counter() - start
                 log.info(f'Modem status scraping took {round(scraping_latency, 2)}s')
 
+                # Get the current UTC timestamp
+                timestamp = datetime.datetime.now(tz=datetime.timezone.utc).timestamp()
+
                 # Downstream channels
                 downstream_channels = []
                 for channel in modem_response['GetMultipleHNAPsResponse']['GetMotoStatusDownstreamChannelInfoResponse']['MotoConnDownstreamChannel'].split('|+|'):
@@ -377,14 +380,15 @@ class Exporter:
                             snr *= 2.5
                     
                     downstream_channels.append((
-                        self.modem_name,
-                        channel_id,
-                        frequency,
-                        modulation,
-                        power,
-                        snr,
-                        correcteds,
-                        uncorrecteds
+                        self.modem_name,        # Device name
+                        channel_id,             # Channel ID
+                        float(frequency) * 1000000,    # Frequency (converted to MHz)
+                        modulation,             # Modulation
+                        power.strip(),          # Power (dBmV)
+                        snr,                    # SNR (dB)
+                        correcteds,             # Correcteds
+                        uncorrecteds,           # Uncorrecteds
+                        timestamp
                     ))
 
                 # Upstream channels
@@ -392,26 +396,24 @@ class Exporter:
                 for channel in modem_response['GetMultipleHNAPsResponse']['GetMotoStatusUpstreamChannelInfoResponse']['MotoConnUpstreamChannel'].split('|+|'):
                     _, _, modulation, channel_id, width, frequency, power, _ = channel.split('^')
                     upstream_channels.append((
-                        self.modem_name,
-                        channel_id,
-                        frequency,
-                        modulation,
-                        power,
-                        width
+                        self.modem_name,        # Device name
+                        channel_id,             # Channel ID
+                        float(frequency) * 1000000,    # Frequency (converted to MHz)
+                        modulation,             # Modulation
+                        power.strip(),          # Power (dBmV)
+                        float(width) * 1000000,        # Width (converted to MHz)
+                        timestamp
                     ))
-
-                # Get the current UTC timestamp
-                timestamp = datetime.datetime.now(tz=datetime.timezone.utc).timestamp()
 
                 # Insert downstream data into Clickhouse
                 await self.clickhouse_queue.put((
                     f"INSERT INTO {self.clickhouse_downstream_table} (device, channel_id, frequency, modulation, power, snr, correcteds, uncorrecteds, time) VALUES",
-                    *downstream_channels
+                    downstream_channels
                 ))
                 # Insert upstream data into Clickhouse
                 await self.clickhouse_queue.put((
                     f"INSERT INTO {self.clickhouse_upstream_table} (device, channel_id, frequency, modulation, power, width, time) VALUES",
-                    *upstream_channels
+                    upstream_channels
                 ))
 
                 # Parse device uptime
@@ -429,7 +431,7 @@ class Exporter:
                 # Insert modem status into Clickhouse
                 await self.clickhouse_queue.put((
                     F"INSERT INTO {self.clickhouse_status_table} (device, config_filename, uptime, version, model, scrape_latency, time) VALUES",
-                    (
+                    [(
                         self.modem_name,                                                                                                        # Passed modem name or SB8200
                         modem_response['GetMultipleHNAPsResponse']['GetMotoStatusStartupSequenceResponse']['MotoConnConfigurationFileComment'], # The loaded configuration filename
                         uptime,                                                                                                                 # System uptime
@@ -437,7 +439,7 @@ class Exporter:
                         'MB8600',                                                                                                               # Device model
                         scraping_latency,                                                                                                       # Scraping latency
                         timestamp
-                    )
+                    )]
                 ))
             except Exception as e:
                 log.error(f'Failed to update modem status: {e}')
