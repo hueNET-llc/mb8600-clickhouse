@@ -380,14 +380,14 @@ class Exporter:
                             snr *= 2.5
                     
                     downstream_channels.append((
-                        self.modem_name,        # Device name
-                        channel_id,             # Channel ID
-                        float(frequency) * 1000000,    # Frequency (converted to MHz)
-                        modulation,             # Modulation
-                        float(power),          # Power (dBmV)
-                        snr,                    # SNR (dB)
-                        correcteds,             # Correcteds
-                        uncorrecteds,           # Uncorrecteds
+                        self.modem_name,                # Device name
+                        int(channel_id),                # Channel ID
+                        float(frequency) * 1000000,     # Frequency (converted to MHz)
+                        modulation,                     # Modulation
+                        float(power),                   # Power (dBmV)
+                        float(snr),                     # SNR (dB)
+                        int(correcteds),                # Correcteds
+                        int(uncorrecteds),              # Uncorrecteds
                         timestamp
                     ))
 
@@ -396,12 +396,12 @@ class Exporter:
                 for channel in modem_response['GetMultipleHNAPsResponse']['GetMotoStatusUpstreamChannelInfoResponse']['MotoConnUpstreamChannel'].split('|+|'):
                     _, _, modulation, channel_id, width, frequency, power, _ = channel.split('^')
                     upstream_channels.append((
-                        self.modem_name,        # Device name
-                        channel_id,             # Channel ID
-                        float(frequency) * 1000000,    # Frequency (converted to MHz)
-                        modulation,             # Modulation
-                        float(power),          # Power (dBmV)
-                        float(width) * 1000000,        # Width (converted to MHz)
+                        self.modem_name,                # Device name
+                        int(channel_id),                # Channel ID
+                        float(frequency) * 1000000,     # Frequency (converted to MHz)
+                        modulation,                     # Modulation
+                        float(power),                   # Power (dBmV)
+                        float(width) * 1000000,         # Width (converted to MHz)
                         timestamp
                     ))
 
