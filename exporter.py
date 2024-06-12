@@ -384,7 +384,7 @@ class Exporter:
                         channel_id,             # Channel ID
                         float(frequency) * 1000000,    # Frequency (converted to MHz)
                         modulation,             # Modulation
-                        power.strip(),          # Power (dBmV)
+                        float(power),          # Power (dBmV)
                         snr,                    # SNR (dB)
                         correcteds,             # Correcteds
                         uncorrecteds,           # Uncorrecteds
@@ -400,7 +400,7 @@ class Exporter:
                         channel_id,             # Channel ID
                         float(frequency) * 1000000,    # Frequency (converted to MHz)
                         modulation,             # Modulation
-                        power.strip(),          # Power (dBmV)
+                        float(power),          # Power (dBmV)
                         float(width) * 1000000,        # Width (converted to MHz)
                         timestamp
                     ))
