@@ -16,11 +16,11 @@ import time
 
 from time import perf_counter
 
-log = logging.getLogger('Exporter')
+log = logging.getLogger('mb8600')
 
 UPTIME_REGEX = re.compile(r'(?:(\d+)\s*days\s*)?(?:(\d{2})h:)?(?:(\d{2})m:)?(?:(\d{2})s)?')
 
-class Exporter:
+class MB8600:
     def __init__(self, loop):
         # Setup logging
         self._setup_logging()
@@ -71,7 +71,7 @@ class Exporter:
             datefmt='%d/%m/%Y %H:%M:%S'
         ))
         # Add the new handler
-        logging.getLogger('Exporter').addHandler(shandler)
+        logging.getLogger('mb8600').addHandler(shandler)
         log.debug('Finished setting up logging')
 
     def _load_env_vars(self):
@@ -101,12 +101,8 @@ class Exporter:
             log.critical(f'Missing environment variable: {e}')
             exit(1)
 
-        # ClickHouse downstream table name (str, default: "docsis_downstream")
-        self.clickhouse_downstream_table = os.environ.get('CLICKHOUSE_DOWNSTREAM_TABLE', 'docsis_downstream')
-        # ClickHouse upstream table name (str, default: "docsis_upstream")
-        self.clickhouse_upstream_table = os.environ.get('CLICKHOUSE_UPSTREAM_TABLE', 'docsis_upstream')
-        # ClickHouse status table name (str, default: "docsis_status")
-        self.clickhouse_status_table = os.environ.get('CLICKHOUSE_STATUS_TABLE', 'docsis_status')
+        # ClickHouse table name (str, default: "docsis")
+        self.clickhouse_table = os.environ.get('CLICKHOUSE_TABLE', 'docsis')
 
         # Scrape delay (int, default: 10)
         try:
@@ -115,7 +111,7 @@ class Exporter:
             if self.scrape_delay < 1:
                 raise ValueError
         except ValueError:
-            log.critical('Invalid SCRAPE_DELAY value, must be a valid number >= 1')
+            log.critical('Invalid SCRAPE_DELAY, must be a valid number >= 1')
             exit(1)
 
         # ClickHouse queue limit (int, default: 1000)
@@ -125,7 +121,7 @@ class Exporter:
             if self.clickhouse_queue_limit < 25:
                 raise ValueError
         except ValueError:
-            log.critical('Invalid CLICKHOUSE_QUEUE_LIMIT value, must be a valid number >= 25')
+            log.critical('Invalid CLICKHOUSE_QUEUE_LIMIT, must be a valid number >= 25')
             exit(1)
 
         try:
@@ -133,7 +129,7 @@ class Exporter:
             if log_level not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
                 raise ValueError
         except ValueError:
-            log.critical('Invalid LOG_LEVEL value, must be a valid log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)')
+            log.critical('Invalid LOG_LEVEL, must be a valid log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)')
             exit(1)
 
         # Set the log level
@@ -364,7 +360,7 @@ class Exporter:
                         continue
 
                 scraping_latency = perf_counter() - start
-                log.info(f'Modem status scraping took {round(scraping_latency, 2)}s')
+                log.info(f'Modem status scraping complete, took {round(scraping_latency, 2)}s')
 
                 # Get the current UTC timestamp
                 timestamp = datetime.datetime.now(tz=datetime.timezone.utc).timestamp()
@@ -379,8 +375,7 @@ class Exporter:
                             # We need to correct the SNR value by about 2.5x
                             snr *= 2.5
                     
-                    downstream_channels.append((
-                        self.modem_name,                # Device name
+                    downstream_channels.append([(
                         int(channel_id),                # Channel ID
                         float(frequency) * 1000000,     # Frequency (converted to MHz)
                         modulation,                     # Modulation
@@ -388,33 +383,19 @@ class Exporter:
                         float(snr),                     # SNR (dB)
                         int(correcteds),                # Correcteds
                         int(uncorrecteds),              # Uncorrecteds
-                        timestamp
-                    ))
+                    )])
 
                 # Upstream channels
                 upstream_channels = []
                 for channel in modem_response['GetMultipleHNAPsResponse']['GetMotoStatusUpstreamChannelInfoResponse']['MotoConnUpstreamChannel'].split('|+|'):
                     _, _, modulation, channel_id, width, frequency, power, _ = channel.split('^')
-                    upstream_channels.append((
-                        self.modem_name,                # Device name
+                    upstream_channels.append([(
                         int(channel_id),                # Channel ID
                         float(frequency) * 1000000,     # Frequency (converted to MHz)
                         modulation,                     # Modulation
                         float(power),                   # Power (dBmV)
-                        float(width) * 1000000,         # Width (converted to MHz)
-                        timestamp
-                    ))
-
-                # Insert downstream data into Clickhouse
-                await self.clickhouse_queue.put((
-                    f"INSERT INTO {self.clickhouse_downstream_table} (device, channel_id, frequency, modulation, power, snr, correcteds, uncorrecteds, time) VALUES",
-                    downstream_channels
-                ))
-                # Insert upstream data into Clickhouse
-                await self.clickhouse_queue.put((
-                    f"INSERT INTO {self.clickhouse_upstream_table} (device, channel_id, frequency, modulation, power, width, time) VALUES",
-                    upstream_channels
-                ))
+                        float(width) * 1000,            # Width (converted to MHz)
+                    )])
 
                 # Parse device uptime
                 uptime = 0
@@ -428,17 +409,31 @@ class Exporter:
                 # Seconds
                 uptime += int(uptime_groups[3])
 
-                # Insert modem status into Clickhouse
-                await self.clickhouse_queue.put((
-                    F"INSERT INTO {self.clickhouse_status_table} (device, config_filename, uptime, version, model, scrape_latency, time) VALUES",
-                    [(
-                        self.modem_name,                                                                                                        # Passed modem name or SB8200
-                        modem_response['GetMultipleHNAPsResponse']['GetMotoStatusStartupSequenceResponse']['MotoConnConfigurationFileComment'], # The loaded configuration filename
-                        uptime,                                                                                                                 # System uptime
-                        modem_response['GetMultipleHNAPsResponse']['GetMotoStatusSoftwareResponse']['StatusSoftwareSfVer'],                     # Software version
-                        'MB8600',                                                                                                               # Device model
+                ok = [(
+                        self.modem_name,                                                                                                        # Modem name
+                        modem_response['GetMultipleHNAPsResponse']['GetMotoStatusStartupSequenceResponse']['MotoConnConfigurationFileComment'], # Modem DOCSIS configuration filename
+                        uptime,                                                                                                                 # Modem uptime
+                        modem_response['GetMultipleHNAPsResponse']['GetMotoStatusSoftwareResponse']['StatusSoftwareSfVer'],                     # Modem software version
+                        'MB8600',                                                                                                               # Modem model
+                        downstream_channels,                                                                                                    # Downstream channels
+                        upstream_channels,                                                                                                      # Upstream channels
                         scraping_latency,                                                                                                       # Scraping latency
-                        timestamp
+                        timestamp                                                                                                               # Data timestamp
+                    )]
+
+                # Insert data into ClickHouse
+                await self.clickhouse_queue.put((
+                    f"INSERT INTO {self.clickhouse_table} (modem_name, modem_config_filename, modem_uptime, modem_version, modem_model, downstream_channels, upstream_channels, scrape_latency, timestamp) VALUES",
+                    [(
+                        self.modem_name,                                                                                                        # Modem name
+                        modem_response['GetMultipleHNAPsResponse']['GetMotoStatusStartupSequenceResponse']['MotoConnConfigurationFileComment'], # Modem DOCSIS configuration filename
+                        uptime,                                                                                                                 # Modem uptime
+                        modem_response['GetMultipleHNAPsResponse']['GetMotoStatusSoftwareResponse']['StatusSoftwareSfVer'],                     # Modem software version
+                        'MB8600',                                                                                                               # Modem model
+                        downstream_channels,                                                                                                    # Downstream channels
+                        upstream_channels,                                                                                                      # Upstream channels
+                        scraping_latency,                                                                                                       # Scraping latency
+                        timestamp                                                                                                               # Data timestamp
                     )]
                 ))
             except Exception as e:
@@ -448,7 +443,7 @@ class Exporter:
                 await asyncio.sleep(self.scrape_delay)
 
 loop = asyncio.new_event_loop()
-exporter = Exporter(loop)
+exporter = MB8600(loop)
 
 def sigterm_handler(_signo, _stack_frame):
     """

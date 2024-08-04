@@ -8,4 +8,4 @@ RUN apk update && \
     apk add --no-cache python3 py3-pip tzdata rsync && \
     pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-ENTRYPOINT ["python", "-u", "exporter.py"]
+ENTRYPOINT ["python", "-u", "mb8600.py"]

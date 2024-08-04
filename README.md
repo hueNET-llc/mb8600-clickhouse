@@ -22,7 +22,5 @@ Configuration is done via environment variables. Any values with "N/A" default a
 | CLICKHOUSE_USERNAME | ClickHouse login username | str | N/A | exporter |
 | CLICKHOUSE_PASSWORD | ClickHouse login password | str | N/A | hunter2 |
 | CLICKHOUSE_DATABASE | ClickHouse database name | str | N/A | metrics |
-| CLICKHOUSE_DOWNSTREAM_TABLE | ClickHouse modem downstream stats table name | str | docsis_downstream | docsis_downstream |
-| CLICKHOUSE_UPSTREAM_TABLE | ClickHouse modem upstream stats table name | str | docsis_upstream | docsis_upstream |
-| CLICKHOUSE_STATUS_TABLE | ClickHouse modem status table name | str | docsis_status | docsis_status
+| CLICKHOUSE_TABLE | ClickHouse modem stats table name | str | docsis | docsis_buffer |
 | CLICKHOUSE_QUEUE_LIMIT | Max number of data waiting to be inserted to ClickHouse (minimum 25) | int | 1000 | 1000 |
